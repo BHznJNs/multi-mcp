@@ -1,0 +1,8 @@
+mcp==1.9.1
+loguru==0.7.3
+typed-argparse==0.3.1
+python-dotenv==1.1.0
+pydantic==2.11.4
+pydantic-settings==2.9.1
+hypercorn==0.17.3
+starlette-context==0.4.0

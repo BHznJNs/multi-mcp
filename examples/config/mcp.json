@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "calculator": {
+      "command": "python",
+      "args": [
+        "./examples/tools/calculator.py"
+      ]
+    },
+    "unit_convertor": {
+      "command": "python",
+      "args": [
+        "./examples/tools/unit_convertor.py"
+      ]
+    },
+    "coding_prompts": {
+      "command": "python",
+      "args": [
+        "./examples/prompts.py"
+      ]
+    },
+    "resources": {
+      "command": "python",
+      "args": [
+        "./examples/resources.py"
+      ]
+    }
+  }
+}
