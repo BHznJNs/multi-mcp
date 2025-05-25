@@ -87,7 +87,7 @@ def proxy_server_factory():
         client_manager = use_client_manager()
         tasks = map(lambda session: session.send_progress_notification(progressToken, progress, total, message),
                     client_manager.client_sessions)
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     @server.set_logging_level()
     async def _handle_set_logging_level(logging_level: types.LoggingLevel):

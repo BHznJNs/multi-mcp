@@ -63,10 +63,10 @@ async def handle_subscribe_resource(url: AnyUrl):
     logger.info("Subscribe resource '{}' requested", url)
     client_manager = use_client_manager()
     tasks = map(lambda session: session.subscribe_resource(url), client_manager.client_sessions)
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 async def handle_unsubscribe_resource(url: AnyUrl):
     logger.info("Unsubscribe resource '{}' requested", url)
     client_manager = use_client_manager()
     tasks = map(lambda session: session.unsubscribe_resource(url), client_manager.client_sessions)
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)

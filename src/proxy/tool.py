@@ -10,7 +10,7 @@ async def handle_list_tools() -> list[types.Tool]:
     client_manager = use_client_manager()
 
     tasks = map(lambda client: client.list_tools(), client_manager.client_sessions)
-    task_results = await asyncio.gather(*tasks)
+    task_results = await asyncio.gather(*tasks, return_exceptions=True)
     result_tools = []
     for result in task_results:
         if isinstance(result, BaseException):
@@ -28,7 +28,7 @@ async def handle_call_tool(
     client_manager = use_client_manager()
 
     tasks = map(lambda client: client.call_tool(name, arguments), client_manager.client_sessions)
-    task_results = await asyncio.gather(*tasks)
+    task_results = await asyncio.gather(*tasks, return_exceptions=True)
     for result in task_results:
         if isinstance(result, BaseException):
             logger.warning("Unexpected result type from call_tool for client: {}", result)
