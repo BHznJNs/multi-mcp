@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "coding_prompts": {
+      "command": "python",
+      "args": [
+        "./examples/prompts.py"
+      ]
+    }
+  }
+}

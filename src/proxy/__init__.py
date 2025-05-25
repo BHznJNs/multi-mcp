@@ -1,7 +1,13 @@
+import asyncio
 from mcp import ServerSession, types
 from mcp.server import Server
 from pydantic import AnyUrl
-from ..lifespan import lifespan_factory
+
+from .resource import handle_list_resource_templates, handle_list_resources, handle_read_resource, handle_subscribe_resource, handle_unsubscribe_resource
+from .tool import handle_list_tools, handle_call_tool
+from .prompt import handle_get_prompt, handle_list_prompts
+from .utils import use_client_manager
+
 
 ####################################################################################
 # Temporary monkeypatch which avoids crashing when a POST message is received
@@ -18,50 +24,75 @@ async def _received_request(self, *args, **kwargs):
         # triggered: Received request before initialization was complete
         pass
 
-ServerSession._received_request = _received_request
+ServerSession._received_request = _received_request # type: ignore
 ####################################################################################
 
 
-def proxy_server_factory(mcp_config_path: str, encoding: str):
-    server = Server("one-mcp", lifespan=lifespan_factory(mcp_config_path, encoding))
+def proxy_server_factory():
+    server = Server("one-mcp")
 
     @server.list_prompts()
     async def _handle_list_prompts() -> list[types.Prompt]:
-        # TODO
-        # ctx = server.request_context
-        return []
+        return await handle_list_prompts()
 
     @server.get_prompt()
     async def _handle_get_prompt(name: str, arguments: dict[str, str] | None) -> types.GetPromptResult:
-        # TODO
-        return types.GetPromptResult()
+        return await handle_get_prompt(name, arguments)
 
     @server.list_resources()
     async def _handle_list_resources() -> list[types.Resource]:
-        # TODO
-        return []
+        return await handle_list_resources()
 
     @server.read_resource()
-    async def _handle_read_resource(uri: AnyUrl) -> str:
-        # TODO
-        return ""
+    async def _handle_read_resource(uri: AnyUrl) -> str | bytes:
+        return await handle_read_resource(uri)
 
     @server.list_resource_templates()
     async def _handle_list_resource_templates() -> list[types.ResourceTemplate]:
-        # TODO
-        return []
+        return await handle_list_resource_templates()
+
+    @server.subscribe_resource()
+    async def _handle_subscribe_resource(url: AnyUrl):
+        return await handle_subscribe_resource(url)
+
+    @server.unsubscribe_resource()
+    async def _handle_unsubscribe_resource(url: AnyUrl):
+        return await handle_unsubscribe_resource(url)
 
     @server.list_tools()
     async def _handle_list_tools() -> list[types.Tool]:
-        # TODO
-        return []
+        return await handle_list_tools()
 
     @server.call_tool()
-    async def _handle_tool_call(
+    async def _handle_call_tool(
         name: str,
         arguments: dict[str, str] | None,
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-        # TODO
-        return []
+        return await handle_call_tool(name, arguments)
+
+    @server.completion()
+    async def _handle_completion(
+        ref: types.PromptReference | types.ResourceReference,
+        argument: types.CompletionArgument,
+    ) -> types.Completion | None:
+        raise ValueError("Not implemented")
+
+    @server.progress_notification()
+    async def _handle_progress_notification(
+        progressToken: str | int,
+        progress: float,
+        total: float | None,
+        message: str | None = None
+    ):
+        client_manager = use_client_manager()
+        tasks = map(lambda session: session.send_progress_notification(progressToken, progress, total, message),
+                    client_manager.client_sessions)
+        await asyncio.gather(*tasks)
+
+    @server.set_logging_level()
+    async def _handle_set_logging_level(logging_level: types.LoggingLevel):
+        client_manager = use_client_manager()
+        tasks = map(lambda client: client.set_logging_level(logging_level), client_manager.client_sessions)
+        await asyncio.gather(*tasks)
 
     return server

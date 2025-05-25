@@ -1,6 +1,7 @@
 import os
 
 from contextlib import AsyncExitStack
+from typing import Iterable
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
@@ -10,20 +11,25 @@ from .client_config import ClientConfig
 
 
 class ClientManager:
-    def __init__(self, encoding: str):
+    def __init__(self, encoding: str, client_configs: list[ClientConfig]):
         self._encoding = encoding
+        self._client_configs = client_configs
         self._stack = AsyncExitStack()
         self._clients: dict[str, ClientSession] = {}
 
-    async def create_clients(self, client_configs: list[ClientConfig]):
+    async def init_clients(self, ):
         await self._stack.__aenter__() # manually enter the stack once
 
-        for config in client_configs:
+        for config in self._client_configs:
             name = config.name
             params = config.params
+
+            if name in self._clients:
+                logger.warning("Client '{}' already exists and will be overridden.", name)
+
             try:
                 if type(params) is ClientConfig.StdioParams:
-                    logger.info(f"Creating stdio client for {name}")
+                    logger.info("Creating stdio client for '{}' with params: {}.", name, params)
                     merged_env = os.environ.copy()
                     merged_env.update(params.env)
 
@@ -34,19 +40,28 @@ class ClientManager:
                             env=merged_env,
                             encoding=self._encoding,
                         )))
-                    session = await self._stack.enter_async_context(ClientSession(read, write))
+                    session = await self._stack.enter_async_context(
+                        ClientSession(read, write))
                 elif type(params) is ClientConfig.SseParams:
-                    logger.info(f"Creating SSE client for {name}")
+                    logger.info("Creating SSE client for '{}' with params: {}", name, params)
                     read, write = await self._stack.enter_async_context(
                         sse_client(
                             url=params.url,
                             headers=params.headers,
                         ))
-                    session = await self._stack.enter_async_context(ClientSession(read, write))
+                    session = await self._stack.enter_async_context(
+                        ClientSession(read, write))
                 else: raise Exception("Unreachable")
-                self._clients[name] = session
+                await session.initialize()
+                logger.info("MCP client for '{}' successfully created.", name)
             except Exception as e:
-                logger.error(f"Failed to create client for {name}: {e}")
+                logger.error("Failed to create client for {}: {}", name, e)
+                continue
+            self._clients[name] = session
+
+    @property
+    def client_sessions(self) -> Iterable[ClientSession]:
+        return self._clients.values()
 
     def get_client(self, name: str) -> ClientSession | None:
         return self._clients.get(name)

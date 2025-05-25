@@ -1,19 +1,40 @@
+import json
 import mcp.server.sse
 import mcp.server.stdio
+from loguru import logger
+from starlette.authentication import requires
+from starlette.middleware import Middleware
+from starlette_context.middleware import ContextMiddleware
+from starlette.routing import Route, Mount
+from starlette.responses import Response
 from starlette.applications import Starlette
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
+from .lifespan import sse_lifespan_factory, streamable_lifespan_factory
+from .client import config_parser, ClientManager
+from .proxy import proxy_server_factory
+from .middlewares.context import ClientManagerPlugin
+from .middlewares.auth import AuthBackend, ConditionalAuthMiddleware
 from .settings import Settings
 
 
 class EntryServer:
     def __init__(self, settings: Settings) -> None:
-        from .proxy import proxy_server_factory
-        self._startlette_app = None
-        self._server = proxy_server_factory(settings.config, settings.encoding)
+        self._starlette_app = None
+        self._settings = settings
+        self._server = proxy_server_factory()
+        self._init_client_manager()
+
+    def _init_client_manager(self):
+        with open(self._settings.config, "r") as f:
+            mcp_config = json.load(f)
+
+        client_configs = config_parser(mcp_config)
+        self._client_manager = ClientManager(self._settings.encoding, client_configs)
 
     @property
     def app(self) -> Starlette | None:
-        return self._startlette_app
+        return self._starlette_app
 
     async def start_stdio_server(self):
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
@@ -23,39 +44,51 @@ class EntryServer:
                 self._server.create_initialization_options())
 
     def start_sse_server(self):
-        from starlette.authentication import requires
-        from starlette.middleware import Middleware
-        from starlette_context.middleware import ContextMiddleware
-        from starlette.routing import Route, Mount
-        from starlette.responses import JSONResponse
-        from .middlewares.auth import AuthBackend, ConditionalAuthMiddleware
-
         @requires("authenticated")
         async def handle_sse(request):
-            nonlocal app, sse
+            nonlocal sse
+            logger.info("SSE connection received")
             async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-                await app.run(
+                await self._server.run(
                     streams[0],
                     streams[1],
-                    app.create_initialization_options())
+                    self._server.create_initialization_options())
+            return Response()
 
-            response = JSONResponse({"message": "SSE connection closed"})
-            await response(request.scope, request.receive, request._send)
-            return response
-
-        async def handle_messages(scope, receive, send):
-            nonlocal sse
-            await sse.handle_post_message(scope, receive, send)
-
-        app = self._server
+        logger.info("Starting SSE server")
         sse = mcp.server.sse.SseServerTransport("/messages/")
-        self._startlette_app = Starlette(
+        self._starlette_app = Starlette(
             middleware=[
-                Middleware(ContextMiddleware),
+                Middleware(ContextMiddleware, plugins=[ClientManagerPlugin(self._client_manager)]),
                 Middleware(ConditionalAuthMiddleware, backend=AuthBackend())
             ],
             routes=[
-                Route("/sse", endpoint=handle_sse),
-                Mount("/messages/", app=handle_messages),
-            ]
+                Route("/sse", endpoint=handle_sse, methods=["GET"]),
+                Mount("/messages/", app=sse.handle_post_message),
+            ],
+            lifespan=sse_lifespan_factory(self._client_manager),
+            debug=self._settings.debug,
+        )
+
+    def start_streamable_server(self):
+        async def handle_streamable_http(scope, receive, send) -> None:
+            logger.info("Streamable HTTP connection received")
+            await self._session_manager.handle_request(scope, receive, send)
+
+        logger.info("Starting Streamable server")
+        self._session_manager = StreamableHTTPSessionManager(
+            app=self._server,
+            event_store=None,
+            stateless=True,
+        )
+        self._starlette_app = Starlette(
+            middleware=[
+                Middleware(ContextMiddleware, plugins=[ClientManagerPlugin(self._client_manager)]),
+                Middleware(ConditionalAuthMiddleware, backend=AuthBackend())
+            ],
+            routes=[
+                Mount("/mcp", app=handle_streamable_http),
+            ],
+            lifespan=streamable_lifespan_factory(self._client_manager, self._session_manager),
+            debug=self._settings.debug,
         )

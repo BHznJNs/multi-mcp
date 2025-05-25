@@ -7,7 +7,6 @@ from .entry_server import EntryServer
 load_dotenv(override=True)
 
 settings = Settings()
-print(settings.transport)
 server = EntryServer(settings)
 match settings.transport:
     case "stdio":
@@ -16,3 +15,8 @@ match settings.transport:
     case "sse":
         server.start_sse_server()
         app = server.app
+    case "streamable":
+        server.start_streamable_server()
+        app = server.app
+    case _:
+        raise ValueError(f"Invalid transport mode: {settings.transport}")

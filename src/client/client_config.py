@@ -40,24 +40,22 @@ def config_parser(raw: dict) -> list[ClientConfig]:
     clients: dict[str, ClientConfig] = {}
     for name, server in servers.items():
         if name in clients:
-            logger.warning(f"Client '{name}' already exists and will be overridden.")
+            logger.warning("Client '{}' already exists and will be overridden.", name)
 
         try:
             validated = MCPServer(**server)
         except ValueError as e:
             msg: str = e.args[0]
-            logger.error(f"Failed to parse server config for {name}: {msg}")
+            logger.error("Failed to parse server config for {}: {}", name, msg)
             continue
 
         config = None
         if validated.command:
-            logger.info(f"Creating stdio client for {name}")
             config = ClientConfig.StdioParams(
                 validated.command,
                 validated.args,
                 validated.env)
         if validated.url:
-            logger.info(f"Creating SSE client for {name}")
             config = ClientConfig.SseParams(
                 validated.url,
                 validated.headers)
