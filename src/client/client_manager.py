@@ -29,28 +29,9 @@ class ClientManager:
 
             try:
                 if type(params) is ClientConfig.StdioParams:
-                    logger.info("Creating stdio client for '{}' with params: {}.", name, params)
-                    merged_env = os.environ.copy()
-                    merged_env.update(params.env)
-
-                    read, write = await self._stack.enter_async_context(
-                        stdio_client(StdioServerParameters(
-                            command=params.command,
-                            args=params.args,
-                            env=merged_env,
-                            encoding=self._encoding,
-                        )))
-                    session = await self._stack.enter_async_context(
-                        ClientSession(read, write))
+                    session = await self._init_stdio_client(name, params)
                 elif type(params) is ClientConfig.SseParams:
-                    logger.info("Creating SSE client for '{}' with params: {}", name, params)
-                    read, write = await self._stack.enter_async_context(
-                        sse_client(
-                            url=params.url,
-                            headers=params.headers,
-                        ))
-                    session = await self._stack.enter_async_context(
-                        ClientSession(read, write))
+                    session = await self._init_sse_client(name, params)
                 else: raise Exception("Unreachable")
                 await session.initialize()
                 logger.info("MCP client for '{}' successfully created.", name)
@@ -58,6 +39,37 @@ class ClientManager:
                 logger.error("Failed to create client for {}: {}", name, e)
                 continue
             self._clients[name] = session
+
+    async def _init_stdio_client(self, name: str, params: ClientConfig.StdioParams) -> ClientSession:
+        logger.info("Creating stdio client for '{}' with params: {}.", name, params)
+        merged_env = os.environ.copy()
+        merged_env.update(params.env)
+
+        read, write = await self._stack.enter_async_context(
+            stdio_client(StdioServerParameters(
+                command=params.command,
+                args=params.args,
+                env=merged_env,
+                encoding=self._encoding,
+            )))
+        session = await self._stack.enter_async_context(
+            ClientSession(read, write))
+        return session
+
+    async def _init_sse_client(self, name: str, params: ClientConfig.SseParams) -> ClientSession:
+        logger.info("Creating SSE client for '{}' with params: {}", name, params)
+        read, write = await self._stack.enter_async_context(
+            sse_client(
+                url=params.url,
+                headers=params.headers,
+            ))
+        session = await self._stack.enter_async_context(
+            ClientSession(read, write))
+        return session
+
+    @property
+    def client_names(self) -> Iterable[str]:
+        return self._clients.keys()
 
     @property
     def client_sessions(self) -> Iterable[ClientSession]:

@@ -1,4 +1,5 @@
 import os
+from loguru import logger
 from starlette.authentication import (
     AuthCredentials, AuthenticationBackend, AuthenticationError, SimpleUser, UnauthenticatedUser
 )
@@ -8,6 +9,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 class ConditionalAuthMiddleware(AuthenticationMiddleware):
     async def __call__(self, scope, receive, send):
         if os.environ.get("AUTH_TOKEN") is None:
+            logger.info("Authentication is disabled.")
             scope["auth"] = AuthCredentials(["authenticated"])
             scope["user"] = SimpleUser("default_user")
             await self.app(scope, receive, send)
@@ -38,7 +40,8 @@ class AuthBackend(AuthenticationBackend):
 
         except ValueError:
             raise AuthenticationError("Invalid Authorization header format")
-        except AuthenticationError:
-            raise
+        except AuthenticationError as e:
+            logger.info("Authentication failed: {}", e)
+            raise e
         except Exception as e:
             raise AuthenticationError(f"Authentication failed: {e}")

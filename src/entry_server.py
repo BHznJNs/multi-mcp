@@ -13,7 +13,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from .lifespan import sse_lifespan_factory, streamable_lifespan_factory
 from .client import config_parser, ClientManager
 from .proxy import proxy_server_factory
-from .middlewares.context import ClientManagerPlugin
+from .middlewares.context import ClientManagerPlugin, NamespacePlugin, SettingsPlugin
 from .middlewares.auth import AuthBackend, ConditionalAuthMiddleware
 from .settings import Settings
 
@@ -54,16 +54,33 @@ class EntryServer:
                     streams[1],
                     self._server.create_initialization_options())
             return Response()
+        
+        @requires("authenticated")
+        async def handle_named_sse(request):
+            nonlocal sse
+            name = request.path_params["name"]
+            logger.info("SSE connection received for server: {}", name)
+            async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+                await self._server.run(
+                    streams[0],
+                    streams[1],
+                    self._server.create_initialization_options())
+            return Response()
 
         logger.info("Starting SSE server")
         sse = mcp.server.sse.SseServerTransport("/messages/")
         self._starlette_app = Starlette(
             middleware=[
-                Middleware(ContextMiddleware, plugins=[ClientManagerPlugin(self._client_manager)]),
+                Middleware(ContextMiddleware, plugins=[
+                    SettingsPlugin(self._settings),
+                    ClientManagerPlugin(self._client_manager),
+                    NamespacePlugin(),
+                ]),
                 Middleware(ConditionalAuthMiddleware, backend=AuthBackend())
             ],
             routes=[
                 Route("/sse", endpoint=handle_sse, methods=["GET"]),
+                Route("/{name}/sse", endpoint=handle_named_sse, methods=["GET"]),
                 Mount("/messages/", app=sse.handle_post_message),
             ],
             lifespan=sse_lifespan_factory(self._client_manager),
@@ -75,6 +92,11 @@ class EntryServer:
             logger.info("Streamable HTTP connection received")
             await self._session_manager.handle_request(scope, receive, send)
 
+        async def handle_named_streamable_http(scope, receive, send) -> None:
+            name = scope["path_params"]["name"]
+            logger.info("Streamable HTTP connection received for server: {}", name)
+            await self._session_manager.handle_request(scope, receive, send)
+
         logger.info("Starting Streamable server")
         self._session_manager = StreamableHTTPSessionManager(
             app=self._server,
@@ -83,11 +105,16 @@ class EntryServer:
         )
         self._starlette_app = Starlette(
             middleware=[
-                Middleware(ContextMiddleware, plugins=[ClientManagerPlugin(self._client_manager)]),
-                Middleware(ConditionalAuthMiddleware, backend=AuthBackend())
+                Middleware(ContextMiddleware, plugins=[
+                    SettingsPlugin(self._settings),
+                    ClientManagerPlugin(self._client_manager),
+                    NamespacePlugin(),
+                ]),
+                Middleware(ConditionalAuthMiddleware, backend=AuthBackend()),
             ],
             routes=[
                 Mount("/mcp", app=handle_streamable_http),
+                Mount("/{name}/mcp", app=handle_named_streamable_http),
             ],
             lifespan=streamable_lifespan_factory(self._client_manager, self._session_manager),
             debug=self._settings.debug,

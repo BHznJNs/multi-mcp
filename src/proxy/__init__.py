@@ -1,4 +1,5 @@
 import asyncio
+from loguru import logger
 from mcp import ServerSession, types
 from mcp.server import Server
 from pydantic import AnyUrl
@@ -6,7 +7,7 @@ from pydantic import AnyUrl
 from .resource import handle_list_resource_templates, handle_list_resources, handle_read_resource, handle_subscribe_resource, handle_unsubscribe_resource
 from .tool import handle_list_tools, handle_call_tool
 from .prompt import handle_get_prompt, handle_list_prompts
-from .utils import use_client_manager
+from .utils import use_client_manager, use_client_session, use_namespace
 
 
 ####################################################################################
@@ -75,7 +76,14 @@ def proxy_server_factory():
         ref: types.PromptReference | types.ResourceReference,
         argument: types.CompletionArgument,
     ) -> types.Completion | None:
-        raise ValueError("Not implemented")
+        client_manager = use_client_manager()
+        tasks = map(lambda session: session.complete(ref, {argument.name: argument.value}),
+                    client_manager.client_sessions)
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in task_results:
+            if isinstance(result, types.Completion):
+                return result
+        return None
 
     @server.progress_notification()
     async def _handle_progress_notification(
@@ -84,6 +92,15 @@ def proxy_server_factory():
         total: float | None,
         message: str | None = None
     ):
+        namespace = use_namespace()
+        if namespace is not None:
+            client = use_client_session(namespace)
+            if client is None:
+                logger.warning("No client found for name: {}", namespace)
+                return
+            await client.send_progress_notification(progressToken, progress, total, message)
+            return
+
         client_manager = use_client_manager()
         tasks = map(lambda session: session.send_progress_notification(progressToken, progress, total, message),
                     client_manager.client_sessions)
@@ -91,6 +108,15 @@ def proxy_server_factory():
 
     @server.set_logging_level()
     async def _handle_set_logging_level(logging_level: types.LoggingLevel):
+        namespace = use_namespace()
+        if namespace is not None:
+            client = use_client_session(namespace)
+            if client is None:
+                logger.warning("No client found for name: {}", namespace)
+                return
+            await client.set_logging_level(logging_level)
+            return
+
         client_manager = use_client_manager()
         tasks = map(lambda client: client.set_logging_level(logging_level), client_manager.client_sessions)
         await asyncio.gather(*tasks)

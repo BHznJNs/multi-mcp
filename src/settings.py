@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     config: str = DEFAULT_CONFIG_FILE
     encoding: str = DEFAULT_ENCODING
     transport: TRANSPORT_MODES = "sse"
+    use_namespace: bool = True
     debug: bool = False
 
     model_config = SettingsConfigDict()
