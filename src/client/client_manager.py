@@ -3,8 +3,9 @@ import os
 from contextlib import AsyncExitStack
 from typing import Iterable
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.session import ClientSession
 from loguru import logger
 
 from .client_config import ClientConfig
@@ -24,6 +25,10 @@ class ClientManager:
             name = config.name
             params = config.params
 
+            if config.disabled:
+                logger.info("Client '{}' is disabled and will not be created.", name)
+                continue
+
             if name in self._clients:
                 logger.warning("Client '{}' already exists and will be overridden.", name)
 
@@ -32,11 +37,14 @@ class ClientManager:
                     session = await self._init_stdio_client(name, params)
                 elif type(params) is ClientConfig.SseParams:
                     session = await self._init_sse_client(name, params)
+                elif type(params) is ClientConfig.StreamableParams:
+                    session = await self._init_streamable_http_client(name, params)
                 else: raise Exception("Unreachable")
+
                 await session.initialize()
-                logger.info("MCP client for '{}' successfully created.", name)
+                logger.info("MCP client '{}' successfully created.", name)
             except Exception as e:
-                logger.error("Failed to create client for {}: {}", name, e)
+                logger.error("Failed to create client {}: {}", name, e)
                 continue
             self._clients[name] = session
 
@@ -60,6 +68,17 @@ class ClientManager:
         logger.info("Creating SSE client for '{}' with params: {}", name, params)
         read, write = await self._stack.enter_async_context(
             sse_client(
+                url=params.url,
+                headers=params.headers,
+            ))
+        session = await self._stack.enter_async_context(
+            ClientSession(read, write))
+        return session
+
+    async def _init_streamable_http_client(self, name: str, params: ClientConfig.StreamableParams) -> ClientSession:
+        logger.info("Creating streamable HTTP client for '{}' with params: {}", name, params)
+        read, write, _ = await self._stack.enter_async_context(
+            streamablehttp_client(
                 url=params.url,
                 headers=params.headers,
             ))

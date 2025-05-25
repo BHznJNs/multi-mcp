@@ -15,7 +15,7 @@ match settings.transport:
     case "sse":
         server.start_sse_server()
         app = server.app
-    case "streamable":
+    case "http":
         server.start_streamable_server()
         app = server.app
     case _:

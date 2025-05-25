@@ -1,11 +1,13 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from loguru import logger
 from pydantic import BaseModel
-from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 class MCPServer(BaseModel):
+    type: Literal["stdio", "sse", "http"] | None = None
+    disabled: bool = False
     command: str | None = None
     url: str | None = None
     headers: dict[str, str] = Field(default_factory=dict)
@@ -16,6 +18,22 @@ class MCPServer(BaseModel):
     def check_command_or_url(self) -> "MCPServer":
         if (self.command is None and self.url is None) or (self.command is not None and self.url is not None):
             raise ValueError("Must only provide one of 'command' or 'url'.")
+        return self
+    
+    @model_validator(mode="after")
+    def check_type(self) -> "MCPServer":
+        match self.type:
+            case "stdio" if self.command is None:
+                raise ValueError("Must provide 'command' for 'type':'stdio'.")
+            case "sse" if self.url is None:
+                raise ValueError("Must provide 'url' for 'type':'sse'.")
+            case "http" if self.url is None:
+                raise ValueError("Must provide 'url' for 'type': 'http'.")
+            case None if self.command:
+                self.type = "stdio"
+            case None if self.url:
+                # use http as default type for url
+                self.type = "http"
         return self
 
 @dataclass
@@ -29,9 +47,14 @@ class ClientConfig:
     class SseParams:
         url: str
         headers: dict[str, str]
+    @dataclass
+    class StreamableParams:
+        url: str
+        headers: dict[str, str]
 
     name: str
-    params: StdioParams | SseParams
+    params: StdioParams | SseParams | StreamableParams
+    disabled: bool
 
 def config_parser(raw: dict) -> list[ClientConfig]:
     servers = raw.get("mcpServers")
@@ -50,16 +73,28 @@ def config_parser(raw: dict) -> list[ClientConfig]:
             continue
 
         config = None
-        if validated.command:
-            config = ClientConfig.StdioParams(
-                validated.command,
-                validated.args,
-                validated.env)
-        if validated.url:
-            config = ClientConfig.SseParams(
-                validated.url,
-                validated.headers)
-        assert config is not None
-        clients[name] = ClientConfig(name=name, params=config)
+        match validated.type:
+            case "stdio":
+                assert validated.command is not None
+                config = ClientConfig.StdioParams(
+                    validated.command,
+                    validated.args,
+                    validated.env)
+            case "sse":
+                assert validated.url is not None
+                config = ClientConfig.SseParams(
+                    validated.url,
+                    validated.headers)
+            case "http":
+                assert validated.url is not None
+                config = ClientConfig.StreamableParams(
+                    validated.url,
+                    validated.headers)
+            case _: raise ValueError("Unreachable")
+
+        clients[name] = ClientConfig(
+            name=name,
+            params=config,
+            disabled=validated.disabled)
 
     return list(clients.values())
