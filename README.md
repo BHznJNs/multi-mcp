@@ -22,6 +22,8 @@ hypercorn src.main:app
 # hypercorn src.main:app --bind 0.0.0.0:7860
 ```
 
+Then you can access the server via `http://localhost:8080/sse` (for SSE mode) or `http://localhost:8080/mcp` (for streamable HTTP mode).
+
 ## Configuration
 
 You can follows the [VSCode Documentation#Configuration format](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_configuration-format) to create the configuration JSON files, and there are also example files in the [examples/config](examples/config).
