@@ -69,7 +69,8 @@ async def handle_read_resource(uri: AnyUrl) -> str | bytes:
             continue
         return join_contents(task_result.contents)
 
-    raise ValueError("Resource '{}' not found", uri)
+    logger.warning("Resource not found: '{}'", uri)
+    raise ValueError("Resource not found: '{}'", uri)
 
 async def handle_list_resource_templates() -> list[types.ResourceTemplate]:
     logger.info("List resource templates requested")

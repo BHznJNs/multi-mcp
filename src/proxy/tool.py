@@ -33,7 +33,6 @@ async def handle_list_tools() -> list[types.Tool]:
         else:
             result_tools.extend(result.tools)
 
-    logger.debug("Returned tools: {}", result_tools)
     return result_tools
 
 async def handle_call_tool(
@@ -60,11 +59,20 @@ async def handle_call_tool(
         return call_tool_result.content
 
     client_manager = use_client_manager()
-    tasks = map(lambda client: client.call_tool(name, arguments), client_manager.client_sessions)
+    tasks = map(lambda client: client.list_tools(), client_manager.client_sessions)
     task_results = await asyncio.gather(*tasks, return_exceptions=True)
-    for result in task_results:
-        if isinstance(result, BaseException):
-            logger.debug("Tool call failed for client: {}", result)
-            continue
-        return result.content
+    for client_name, result in zip(client_manager.client_names, task_results):
+        if isinstance(result, BaseException): continue
+        # try to find the tool in the result
+        filtered = filter(lambda tool: tool.name == name, result.tools)
+        optional_tool = next(filtered, None)
+        if optional_tool is None: continue
+
+        # if found, call it on the corresponding client
+        target_client = client_manager.get_client(client_name)
+        assert target_client is not None # since the name is from the list of client_names, it should not be None
+        call_tool_result = await target_client.call_tool(name, arguments)
+        return call_tool_result.content
+
+    logger.warning("No tool named '{}' found", name)
     raise ValueError(f"No tool named '{name}' found")
