@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "user": {
+      "command": "python",
+      "args": [
+        "./examples/resources/user.py"
+      ]
+    },
+    "article": {
+      "command": "python",
+      "args": [
+        "./examples/resources/article.py"
+      ]
+    }
+  }
+}
