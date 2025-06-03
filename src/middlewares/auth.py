@@ -18,30 +18,42 @@ class ConditionalAuthMiddleware(AuthenticationMiddleware):
 
 class AuthBackend(AuthenticationBackend):
     async def authenticate(self, conn):
-        # use both `Authorization` and `X-MCP-Token` to authenticate the user
+        # use both `Authorization` or `X-MCP-Token` to authenticate the user
         if "Authorization" not in conn.headers and\
             "X-MCP-Token" not in conn.headers:
             logger.warning("Authorization header not found in request.")
-            return
+            raise AuthenticationError("Authorization header not found in request.")
 
-        auth = conn.headers.get("Authorization") or\
-               conn.headers.get("X-MCP-Token")
-        assert auth is not None
+        default_auth   = conn.headers.get("Authorization")
+        extra_auth     = conn.headers.get("X-MCP-Token")
+        expected_token = os.environ.get("AUTH_TOKEN")
         try:
-            scheme, credentials = auth.split()
-            if scheme.lower() != "bearer":
-                raise AuthenticationError("Bearer prefixed token is required.")
+            if default_auth is not None:
+                # use bearer token
+                logger.info("Use default Authorization header.")
+                scheme, token = default_auth.split()
+                if scheme.lower() != "bearer":
+                    logger.debug("Auth failed: Bearer prefixed token is required.")
+                    raise AuthenticationError("Bearer prefixed token is required.")
 
-            token = credentials
-            if not token:
-                raise AuthenticationError("Bearer token is missing.")
+                if not token:
+                    logger.debug("Auth failed: Bearer token is missing.")
+                    raise AuthenticationError("Bearer token is missing.")
 
-            expected_token = os.environ.get("AUTH_TOKEN")
-            if expected_token and token != expected_token:
-                raise AuthenticationError("Invalid auth token.")
+                expected_token = os.environ.get("AUTH_TOKEN")
+                if token != expected_token:
+                    logger.debug("Auth failed: Invalid auth token.")
+                    raise AuthenticationError("Invalid auth token.")
+
+            if extra_auth is not None:
+                # directly compare token
+                logger.info("Use extra X-MCP-Token header.")
+                if extra_auth != expected_token:
+                    logger.debug("Auth failed: Invalid auth token.")
+                    raise AuthenticationError("Invalid auth token.")
 
             username = "authenticated_user"
-            logger.log("Authenticated user: {}", username)
+            logger.info("Authenticated user: {}", username)
             return AuthCredentials(["authenticated"]), SimpleUser(username)
 
         except ValueError:
