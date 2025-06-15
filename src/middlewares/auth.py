@@ -45,7 +45,7 @@ class AuthBackend(AuthenticationBackend):
                     logger.debug("Auth failed: Invalid auth token.")
                     raise AuthenticationError("Invalid auth token.")
 
-            if extra_auth is not None:
+            elif extra_auth is not None:
                 # directly compare token
                 logger.info("Use extra X-MCP-Token header.")
                 if extra_auth != expected_token:

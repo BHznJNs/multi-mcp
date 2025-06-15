@@ -39,6 +39,11 @@ You can follows the [VSCode Documentation#Configuration format](https://code.vis
 | `USE_NAMESPACE` | `True`        | Whether to use namespaces for tools/resources |
 | `DEBUG`         | `False`       | Enable or disable debug mode |
 
+### Authorization Header
+
+This program uses either `Authorization` or `X-MCP-Token` HTTP headers for authentication.
+For the `Authorization` header, it receives `Bearer <Your-AUTH_TOKEN>` while for the `X-MCP-Token`, it receives `<Your-AUTH_TOKEN>`.
+
 ## Inspiration
 
 This project is inspired by: [multi-mcp](https://github.com/kfirtoledo/multi-mcp)
